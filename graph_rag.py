@@ -2,40 +2,68 @@
 import os
 import json
 import re
+import traceback
 
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
-from google import genai
-import traceback
+from groq import Groq
+
 from retriever import retrieve_context
 
 print("1. Loading environment...", flush=True)
 load_dotenv()
 
-# Gemini configuration
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL")
+# ----------------------------------
+# Groq Configuration
+# ----------------------------------
 
-print("2. Creating Gemini client...", flush=True)
-client = genai.Client(api_key=GEMINI_API_KEY)
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# Neo4j configuration
+GROQ_MODEL = os.getenv(
+    "GROQ_MODEL",
+    "openai/gpt-oss-120b"
+)
+
+if not GROQ_API_KEY:
+    raise ValueError("GROQ_API_KEY is missing!")
+
+print("2. Creating Groq client...", flush=True)
+
+llm_model = GROQ_MODEL
+
+print("Using model:", llm_model, flush=True)
+
+client = Groq(api_key=GROQ_API_KEY)
+
+print("3. Groq client initialized successfully", flush=True)
+
+# ----------------------------------
+# Neo4j Configuration
+# ----------------------------------
+
 URI = os.getenv("NEO4J_URI")
 USERNAME = os.getenv("NEO4J_USERNAME")
 PASSWORD = os.getenv("NEO4J_PASSWORD")
 DATABASE = os.getenv("NEO4J_DATABASE", "neo4j")
 
-print("5. Initializing Neo4j...", flush=True)
+if not all([URI, USERNAME, PASSWORD]):
+    raise ValueError("Neo4j configuration is incomplete!")
+
+print("4. Initializing Neo4j...", flush=True)
 
 driver = GraphDatabase.driver(
     URI,
     auth=(USERNAME, PASSWORD)
 )
 
-print("6. Neo4j initialized!", flush=True)
+print("5. Neo4j driver initialized", flush=True)
 
-print("Both clients initialized successfully!", flush=True)
-client = genai.Client(api_key=GEMINI_API_KEY)
+
+driver = GraphDatabase.driver(
+    URI,
+    auth=(USERNAME, PASSWORD)
+)
+
 
 
 # 1. Define the graph schema
@@ -129,15 +157,20 @@ def generate_cypher(question):
     User question: {question}
     """
 
-    print("Sending request to Gemini...", flush=True)
+    print("Sending request to Groq...", flush=True)
 
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=prompt,
-        config={"temperature": 0.1}
-    )
+    response = client.chat.completions.create(
+    model=GROQ_MODEL,
+    messages=[
+        {"role": "user", "content": prompt}
+    ],
+    temperature=0.1,
+    max_tokens=1000
+)
 
-    print("Gemini responded!", flush=True)
+    output = response.choices[0].message.content.strip()
+
+    print("Groq responded!", flush=True)
     print(response.text, flush=True)
 
     output = response.text.strip()
@@ -218,7 +251,6 @@ def retrieve_from_graph(question):
 
 def generate_answer(question, retrieval_results):
 
-    # Extract ONLY the retrieved results
     context = json.dumps(
         retrieval_results["results"],
         ensure_ascii=False,
@@ -241,18 +273,16 @@ def generate_answer(question, retrieval_results):
     {context}
     """
 
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=prompt,
-        config={
-            "temperature": 0.2,
-            "max_output_tokens": 500
-        }
+    response = client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=[
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.2,
+        max_tokens=500
     )
 
-    return response.text.strip()
-
-
+    return response.choices[0].message.content.strip()
 
 # ==========================================
 # Run complete GraphRAG pipeline
