@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from graph_rag import DATABASE, driver, generate_answer
 from retriever import retrieve_context
-
+import uvicorn
+import os
 
 class RetrievalRequest(BaseModel):
     question: str = Field(..., min_length=1, description="User's question")
@@ -64,6 +65,10 @@ def graph_rag_endpoint(request: RetrievalRequest):
 
 
 if __name__ == "__main__":
-    import uvicorn
 
-    uvicorn.run("api:app", host="127.0.0.1", port=8000, reload=True)
+
+    uvicorn.run(
+        "api:app",
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 8000))
+    )
